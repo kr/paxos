@@ -1,0 +1,4 @@
+Package paxos implements the basic paxos consensus protocol.
+(The interface of this package is experimental and may change.)
+
+http://godoc.org/github.com/kr/paxos
