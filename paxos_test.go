@@ -372,7 +372,6 @@ func (n *testNode) Recv(m *Message) {
 }
 
 func (n *testNode) Send(m *Message) {
-	m.From = n.addr
 	for _, c := range n.remote {
 		c <- m
 	}

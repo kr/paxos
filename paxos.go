@@ -31,8 +31,6 @@ const (
 type Network interface {
 	// Send sends a message to all nodes on the network.
 	// It may be called from multiple goroutines concurrently.
-	// All fields except From will be set by the caller;
-	// it is the network's responsibility to set From properly.
 	Send(*Message)
 
 	// Recv receives a message from any node on the network.
@@ -67,14 +65,19 @@ func (n *Node) Run() string {
 	defer close(cch)
 	defer close(ach)
 	defer func() { stop <- 1 }()
+	addr := n.t.LocalAddr()
+	send := func(m *Message) {
+		m.From = addr
+		n.t.Send(m)
+	}
 	k := n.t.Len()
-	pr := int64(n.t.LocalAddr())
+	pr := int64(addr)
 	if pr == 0 {
 		pr += int64(k)
 	}
 	go n.mux(stop, cch, ach, lch)
-	go runCoordinator(k, pr, cch, n.t.Send)
-	go runAcceptor(ach, n.t.Send)
+	go runCoordinator(k, pr, cch, send)
+	go runAcceptor(ach, send)
 	return runLearner(k, lch)
 }
 
