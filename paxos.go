@@ -31,9 +31,15 @@ const (
 type Network interface {
 	// Send sends a message to all nodes on the network.
 	// It may be called from multiple goroutines concurrently.
+	// If Send encounters an error, it should make a reasonable
+	// effort to deliver the message, then return. (Paxos
+	// doesn't distinguish between detected and undetected
+	// failures in delivery.)
 	Send(*Message)
 
 	// Recv receives a message from any node on the network.
+	// It should block until one complete message has been
+	// successfully received.
 	Recv(*Message)
 
 	// Len returns the number of nodes on the network.
