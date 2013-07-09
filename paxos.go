@@ -13,6 +13,13 @@ type Message struct {
 }
 
 const (
+	none = iota - 1
+	coordinator
+	acceptor
+	learner
+)
+
+const (
 	nop = iota
 	prepare
 	promise
@@ -20,6 +27,15 @@ const (
 	accepted
 	propose
 )
+
+var role = [...]int{
+	nop:      none,
+	propose:  coordinator,
+	promise:  coordinator,
+	prepare:  acceptor,
+	accept:   acceptor,
+	accepted: learner,
+}
 
 // A Network broadcasts and receives messages.
 // Paxos makes the following assumptions:
@@ -51,43 +67,72 @@ type Network interface {
 
 // Node represents a paxos participant.
 type Node struct {
-	t    Network
-	prop chan string
+	prop    chan string
+	stop    chan int
+	learned chan int
+	v       string
 }
 
-// NewNode returns a participant for paxos on network t.
-func NewNode(t Network) *Node {
-	return &Node{t, make(chan string, 1)}
+// Start runs paxos on network t.
+func Start(t Network) *Node {
+	n := &Node{
+		prop:    make(chan string, 1),
+		stop:    make(chan int, 1),
+		learned: make(chan int),
+	}
+	go n.run(t)
+	return n
 }
 
-// Run does the work of a paxos participant in all three roles
+// run does the work of a paxos participant in all three roles
 // (coordinator, acceptor, and learner).
-// It returns the value learned.
-func (n *Node) Run() string {
-	cch := make(chan *Message)
-	ach := make(chan *Message)
-	lch := make(chan *Message)
-	stop := make(chan int)
-	defer close(cch)
-	defer close(ach)
-	defer func() { stop <- 1 }()
-	addr := n.t.LocalAddr()
+func (n *Node) run(t Network) {
+	mch := []chan *Message{
+		coordinator: make(chan *Message),
+		acceptor:    make(chan *Message),
+		learner:     make(chan *Message),
+	}
+	defer func() {
+		for _, c := range mch {
+			close(c)
+		}
+	}()
+	addr := t.LocalAddr()
 	send := func(m *Message) {
 		m.From = addr
-		n.t.Send(m)
+		t.Send(m)
 	}
-	k := n.t.Len()
+	k := t.Len()
 	pr := int64(addr)
 	if pr == 0 {
 		pr += int64(k)
 	}
-	go n.mux(stop, cch, ach, lch)
-	go runCoordinator(k, pr, cch, send)
-	go runAcceptor(ach, send)
-	return runLearner(k, lch)
+	go runCoordinator(k, pr, mch[coordinator], send)
+	go runAcceptor(mch[acceptor], send)
+	go func() {
+		n.v = runLearner(k, mch[learner])
+		close(n.learned)
+		for _ = range mch[learner] {
+		}
+	}()
+	for {
+		m := new(Message)
+		select {
+		case m.Val = <-n.prop:
+			m.Type = propose
+		default:
+			t.Recv(m)
+		}
+		select {
+		case mch[role[m.Type]] <- m:
+		case <-n.stop:
+			return
+		}
+	}
 }
 
-// Propose tells the coordinator to start a new round.
+// Propose starts a new round proposing v.
+// If n has been stopped, Propose has no effect.
 func (n *Node) Propose(v string) {
 	select {
 	case n.prop <- v:
@@ -95,34 +140,20 @@ func (n *Node) Propose(v string) {
 	}
 }
 
-func (n *Node) mux(stop chan int, chs ...chan *Message) {
-	for {
-		m := new(Message)
-		select {
-		case m.Val = <-n.prop:
-			m.Type = propose
-		default:
-			n.t.Recv(m)
-		}
-		c := chs[role(m.Type)]
-		select {
-		case c <- m:
-		case <-stop:
-			return
-		}
-	}
+// Wait returns the value learned.
+// If n is stopped before it learns a value,
+// Wait returns the empty string.
+func (n *Node) Wait() string {
+	<-n.learned
+	return n.v
 }
 
-func role(cmd int) int {
-	switch cmd {
-	case propose, promise:
-		return 0
-	case prepare, accept:
-		return 1
-	case accepted:
-		return 2
+// Stop ceases participation in Paxos.
+func (n *Node) Stop() {
+	select {
+	case n.stop <- 1:
+	default:
 	}
-	return -1
 }
 
 func runCoordinator(k int, pr int64, recv chan *Message, send func(*Message)) {
@@ -193,8 +224,7 @@ func runLearner(k int, recv chan *Message) string {
 	votes := make(map[string]int)
 	voted := make([]bool, k)
 	q := quorum(k)
-	for {
-		m := <-recv
+	for m := range recv {
 		if m.Ar > round {
 			round = m.Ar
 			votes = make(map[string]int)
@@ -210,6 +240,7 @@ func runLearner(k int, recv chan *Message) string {
 			}
 		}
 	}
+	return ""
 }
 
 func quorum(k int) int {

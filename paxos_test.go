@@ -318,23 +318,32 @@ func TestQuorum(t *testing.T) {
 	}
 }
 
-func TestNode(t *testing.T) {
-	const w = "foo"
-	const k = 3
-	vals := make(chan string)
-	nets := newTestNet(k)
+func runSet(k int, v string, check func(string)) {
 	var ps []*Node
-	for _, node := range nets {
-		p := NewNode(node)
-		go func() { vals <- p.Run() }()
+	for _, net := range newTestNet(k) {
+		p := Start(net)
 		ps = append(ps, p)
+		defer p.Stop()
 	}
-	ps[0].Propose(w)
-	for _ = range nets {
-		g := <-vals
+	ps[0].Propose(v)
+	for _, p := range ps {
+		g := p.Wait()
+		check(g)
+	}
+}
+
+func TestPaxos(t *testing.T) {
+	const w = "foo"
+	runSet(3, w, func(g string) {
 		if w != g {
 			t.Errorf("g = %v want %v", g, w)
 		}
+	})
+}
+
+func BenchmarkPaxos(b *testing.B) {
+	for i := 0; i < b.N; i++ {
+		runSet(3, "foo", func(string) {})
 	}
 }
 
