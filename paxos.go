@@ -115,17 +115,30 @@ func (n *Node) run(t Network) {
 		for _ = range mch[learner] {
 		}
 	}()
+	recv := make(chan *Message)
+	go receive(t, recv, n.stop)
+	for {
+		var m *Message
+		select {
+		case v := <-n.prop:
+			m = &Message{Type: propose, Val: v}
+		case m = <-recv:
+			if m == nil {
+				return
+			}
+		}
+		mch[role[m.Type]] <- m
+	}
+}
+
+func receive(t Network, ch chan *Message, stop chan int) {
+	defer close(ch)
 	for {
 		m := new(Message)
+		t.Recv(m)
 		select {
-		case m.Val = <-n.prop:
-			m.Type = propose
-		default:
-			t.Recv(m)
-		}
-		select {
-		case mch[role[m.Type]] <- m:
-		case <-n.stop:
+		case ch <- m:
+		case <-stop:
 			return
 		}
 	}
