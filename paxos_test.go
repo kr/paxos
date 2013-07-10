@@ -332,7 +332,7 @@ func runSet(k int, v string, check func(string)) {
 	}
 }
 
-func TestPaxos(t *testing.T) {
+func TestPaxos3(t *testing.T) {
 	const w = "foo"
 	runSet(3, w, func(g string) {
 		if w != g {
@@ -341,16 +341,31 @@ func TestPaxos(t *testing.T) {
 	})
 }
 
-func BenchmarkPaxos(b *testing.B) {
+func TestPaxos5(t *testing.T) {
+	const w = "foo"
+	runSet(5, w, func(g string) {
+		if w != g {
+			t.Errorf("g = %v want %v", g, w)
+		}
+	})
+}
+
+func BenchmarkPaxos3(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		runSet(3, "foo", func(string) {})
+	}
+}
+
+func BenchmarkPaxos5(b *testing.B) {
+	for i := 0; i < b.N; i++ {
+		runSet(5, "foo", func(string) {})
 	}
 }
 
 func newTestNet(k int) (ns []*testNode) {
 	chans := make([]chan *Message, k)
 	for i := 0; i < k; i++ {
-		chans[i] = make(chan *Message, 1)
+		chans[i] = make(chan *Message)
 		ns = append(ns, &testNode{
 			remote: chans,
 			local:  chans[i],

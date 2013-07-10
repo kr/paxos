@@ -100,7 +100,7 @@ func (n *Node) run(t Network) {
 	addr := t.LocalAddr()
 	send := func(m *Message) {
 		m.From = addr
-		t.Send(m)
+		go t.Send(m)
 	}
 	k := t.Len()
 	pr := int64(addr)
