@@ -363,28 +363,21 @@ func BenchmarkPaxos5(b *testing.B) {
 }
 
 func newTestNet(k int) (ns []*testNode) {
-	chans := make([]chan *Message, k)
+	a := make([]chan *Message, k)
 	for i := 0; i < k; i++ {
-		chans[i] = make(chan *Message)
-		ns = append(ns, &testNode{
-			remote: chans,
-			local:  chans[i],
-			addr:   i,
-			len:    k,
-		})
+		a[i] = make(chan *Message)
+		ns = append(ns, &testNode{i, a})
 	}
 	return ns
 }
 
 type testNode struct {
-	remote []chan *Message
-	local  chan *Message
-	addr   int
-	len    int
+	addr int
+	ch   []chan *Message
 }
 
 func (n *testNode) Len() int {
-	return n.len
+	return len(n.ch)
 }
 
 func (n *testNode) LocalAddr() int {
@@ -392,11 +385,11 @@ func (n *testNode) LocalAddr() int {
 }
 
 func (n *testNode) Recv(m *Message) {
-	*m = *<-n.local
+	*m = *<-n.ch[n.addr]
 }
 
 func (n *testNode) Send(m *Message) {
-	for _, c := range n.remote {
+	for _, c := range n.ch {
 		c <- m
 	}
 }
