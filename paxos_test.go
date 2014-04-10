@@ -318,6 +318,16 @@ func TestQuorum(t *testing.T) {
 	}
 }
 
+func TestControl(t *testing.T) {
+	net := newTestNet(3)[0]
+	p := Start(net)
+	p.Stop()
+	p.Wait()
+	p.Propose("bar")
+	p.Stop()
+	p.Stop()
+}
+
 func runSet(k int, v string, check func(string)) {
 	var ps []*Node
 	for _, net := range newTestNet(k) {
