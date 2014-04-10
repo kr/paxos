@@ -67,8 +67,9 @@ type Network interface {
 
 // Node represents a paxos participant.
 type Node struct {
-	prop    chan string
+	recv    chan *Message
 	stop    chan int
+	done    chan int
 	learned chan int
 	v       string
 }
@@ -76,8 +77,9 @@ type Node struct {
 // Start runs paxos on network t.
 func Start(t Network) *Node {
 	n := &Node{
-		prop:    make(chan string, 1),
+		recv:    make(chan *Message),
 		stop:    make(chan int, 1),
+		done:    make(chan int),
 		learned: make(chan int),
 	}
 	go n.run(t)
@@ -87,6 +89,7 @@ func Start(t Network) *Node {
 // run does the work of a paxos participant in all three roles
 // (coordinator, acceptor, and learner).
 func (n *Node) run(t Network) {
+	defer close(n.done)
 	mch := []chan *Message{
 		coordinator: make(chan *Message),
 		acceptor:    make(chan *Message),
@@ -115,30 +118,24 @@ func (n *Node) run(t Network) {
 		for _ = range mch[learner] {
 		}
 	}()
-	recv := make(chan *Message)
-	go receive(t, recv, n.stop)
+	go receive(t, n.recv, n.done)
 	for {
-		var m *Message
 		select {
-		case v := <-n.prop:
-			m = &Message{Type: propose, Val: v}
-		case m = <-recv:
-			if m == nil {
-				return
-			}
+		case m := <-n.recv:
+			mch[role[m.Type]] <- m
+		case <-n.stop:
+			return
 		}
-		mch[role[m.Type]] <- m
 	}
 }
 
-func receive(t Network, ch chan *Message, stop chan int) {
-	defer close(ch)
+func receive(t Network, recv chan *Message, done chan int) {
 	for {
 		m := new(Message)
 		t.Recv(m)
 		select {
-		case ch <- m:
-		case <-stop:
+		case recv <- m:
+		case <-done:
 			return
 		}
 	}
@@ -148,8 +145,8 @@ func receive(t Network, ch chan *Message, stop chan int) {
 // If n has been stopped, Propose has no effect.
 func (n *Node) Propose(v string) {
 	select {
-	case n.prop <- v:
-	default:
+	case n.recv <- &Message{Type: propose, Val: v}:
+	case <-n.done:
 	}
 }
 
